@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Wladimir NFC Card</string>
+    <string name="service_desc">NFC business card</string>
+</resources>
