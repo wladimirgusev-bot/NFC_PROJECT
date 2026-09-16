@@ -35,8 +35,6 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
 
-    // Оставляем прежнее имя SharedPreferences, чтобы данные пользователя
-    // сохранились при обновлении с предыдущих версий приложения.
     private static final String PREFS = "nfc_card";
     private static final String KEY_NAME = "name";
     private static final String KEY_JOB = "job";
@@ -117,7 +115,6 @@ public class MainActivity extends Activity {
         );
 
         root.addView(editBar, lp(-1, dp(52)));
-
         editButton.setOnClickListener(v -> showEditScreen());
 
         setContentView(root);
@@ -162,7 +159,7 @@ public class MainActivity extends Activity {
         nameInput = labeledField(
                 form,
                 "ФИО",
-                "Введите ФИО",
+                "Фамилия Имя Отчество",
                 prefs.getString(KEY_NAME, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS
         );
@@ -205,11 +202,7 @@ public class MainActivity extends Activity {
         save.setOnClickListener(v -> {
             if (saveData()) {
                 hideKeyboard();
-                Toast.makeText(
-                        this,
-                        "Визитка сохранена",
-                        Toast.LENGTH_SHORT
-                ).show();
+                Toast.makeText(this, "Визитка сохранена", Toast.LENGTH_SHORT).show();
                 showCardScreen();
             }
         });
@@ -239,12 +232,7 @@ public class MainActivity extends Activity {
         page.setPadding(0, dp(8), 0, dp(24));
         scroll.addView(page);
 
-        // QR-КОД СВЕРХУ
-        TextView qrTitle = text(
-                "Отсканируйте QR-код",
-                20,
-                Color.WHITE
-        );
+        TextView qrTitle = text("Отсканируйте QR-код", 20, Color.WHITE);
         qrTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         qrTitle.setGravity(Gravity.CENTER);
         page.addView(qrTitle, lp(-1, -2));
@@ -281,7 +269,6 @@ public class MainActivity extends Activity {
         );
         page.addView(qrBox, lp(-1, -2));
 
-        // ВИЗИТКА НИЖЕ QR-КОДА
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(24), dp(26), dp(24), dp(24));
@@ -291,37 +278,23 @@ public class MainActivity extends Activity {
         cardLp.setMargins(0, dp(18), 0, 0);
         page.addView(card, cardLp);
 
-        TextView initials = text(
-                getInitials(name),
-                24,
-                Color.WHITE
-        );
+        TextView initials = text(getInitials(name), 24, Color.WHITE);
         initials.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         initials.setGravity(Gravity.CENTER);
         initials.setBackground(roundRect(Color.rgb(37, 99, 235), 34));
-
         card.addView(
                 initials,
                 new LinearLayout.LayoutParams(dp(68), dp(68))
         );
 
-        TextView nameView = text(
-                name,
-                28,
-                Color.rgb(15, 23, 42)
-        );
+        TextView nameView = text(name, 28, Color.rgb(15, 23, 42));
         nameView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
         LinearLayout.LayoutParams nameLp = lp(-1, -2);
         nameLp.setMargins(0, dp(20), 0, 0);
         card.addView(nameView, nameLp);
 
         if (!job.isEmpty()) {
-            TextView jobView = text(
-                    job,
-                    18,
-                    Color.rgb(71, 85, 105)
-            );
+            TextView jobView = text(job, 18, Color.rgb(71, 85, 105));
             LinearLayout.LayoutParams jobLp = lp(-1, -2);
             jobLp.setMargins(0, dp(6), 0, 0);
             card.addView(jobView, jobLp);
@@ -329,7 +302,6 @@ public class MainActivity extends Activity {
 
         View divider = new View(this);
         divider.setBackgroundColor(Color.rgb(226, 232, 240));
-
         LinearLayout.LayoutParams divLp =
                 new LinearLayout.LayoutParams(-1, dp(1));
         divLp.setMargins(0, dp(22), 0, dp(18));
@@ -454,16 +426,30 @@ public class MainActivity extends Activity {
             String phone,
             String email
     ) {
+        String[] nameParts = splitRussianFullName(name);
+        String familyName = nameParts[0];
+        String givenName = nameParts[1];
+        String additionalName = nameParts[2];
+
         StringBuilder vcard = new StringBuilder();
 
         vcard.append("BEGIN:VCARD\r\n");
         vcard.append("VERSION:3.0\r\n");
+
+        // FN — отображаемое полное имя.
         vcard.append("FN:")
                 .append(vcardEscape(name))
                 .append("\r\n");
+
+        // N — структурированное имя:
+        // N:Фамилия;Имя;Отчество;Префикс;Суффикс
         vcard.append("N:")
-                .append(vcardEscape(name))
-                .append(";;;;\r\n");
+                .append(vcardEscape(familyName))
+                .append(";")
+                .append(vcardEscape(givenName))
+                .append(";")
+                .append(vcardEscape(additionalName))
+                .append(";;\r\n");
 
         if (job != null && !job.trim().isEmpty()) {
             vcard.append("TITLE:")
@@ -486,6 +472,41 @@ public class MainActivity extends Activity {
         vcard.append("END:VCARD\r\n");
 
         return vcard.toString();
+    }
+
+    /**
+     * Ожидаемый ввод: Фамилия Имя Отчество.
+     * 1 слово  -> фамилия
+     * 2 слова -> фамилия, имя
+     * 3+      -> фамилия, имя, оставшаяся часть как отчество/доп. имя
+     */
+    private String[] splitRussianFullName(String fullName) {
+        String normalized = fullName == null
+                ? ""
+                : fullName.trim().replaceAll("\\s+", " ");
+
+        if (normalized.isEmpty()) {
+            return new String[] {"", "", ""};
+        }
+
+        String[] parts = normalized.split(" ");
+
+        String family = parts.length > 0 ? parts[0] : "";
+        String given = parts.length > 1 ? parts[1] : "";
+
+        StringBuilder additional = new StringBuilder();
+        for (int i = 2; i < parts.length; i++) {
+            if (additional.length() > 0) {
+                additional.append(" ");
+            }
+            additional.append(parts[i]);
+        }
+
+        return new String[] {
+                family,
+                given,
+                additional.toString()
+        };
     }
 
     private String vcardEscape(String value) {
