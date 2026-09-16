@@ -191,8 +191,8 @@ public class MainActivity extends Activity {
 
         companyInput = labeledField(
                 form,
-                "Компания",
-                "Введите название компании",
+                "Организация",
+                "Введите название организации",
                 prefs.getString(KEY_COMPANY, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS
         );
