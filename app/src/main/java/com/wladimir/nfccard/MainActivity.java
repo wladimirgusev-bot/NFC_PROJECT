@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.nfc.NfcAdapter;
@@ -44,6 +45,7 @@ public class MainActivity extends Activity {
     private FrameLayout contentHost;
     private LinearLayout editBar;
     private TextView status;
+    private ScrollView editScroll;
 
     private boolean cardMode = false;
 
@@ -59,6 +61,7 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(Color.rgb(11, 16, 32));
         getWindow().setNavigationBarColor(Color.rgb(11, 16, 32));
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         if (nfcAdapter != null) {
@@ -132,13 +135,16 @@ public class MainActivity extends Activity {
         editBar.setVisibility(View.GONE);
         contentHost.removeAllViews();
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
+        editScroll = new ScrollView(this);
+        editScroll.setFillViewport(false);
+        editScroll.setVerticalScrollBarEnabled(true);
+        editScroll.setClipToPadding(false);
+        editScroll.setPadding(0, 0, 0, dp(180));
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(0, dp(4), 0, dp(18));
-        scroll.addView(page);
+        page.setPadding(0, dp(4), 0, dp(24));
+        editScroll.addView(page);
 
         TextView heading = text("Данные визитки", 24, Color.WHITE);
         heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -209,11 +215,12 @@ public class MainActivity extends Activity {
             }
         });
 
-        contentHost.addView(scroll);
+        contentHost.addView(editScroll);
     }
 
     private void showCardScreen() {
         cardMode = true;
+        editScroll = null;
         editBar.setVisibility(View.VISIBLE);
         contentHost.removeAllViews();
 
@@ -332,7 +339,35 @@ public class MainActivity extends Activity {
         input.setBackground(bg);
 
         parent.addView(input, lp(-1, dp(54)));
+
+        input.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                scrollInputIntoView(input);
+            }
+        });
+
+        input.setOnClickListener(v -> scrollInputIntoView(input));
+
         return input;
+    }
+
+    private void scrollInputIntoView(View input) {
+        if (editScroll == null) {
+            return;
+        }
+
+        editScroll.postDelayed(() -> {
+            if (editScroll == null) {
+                return;
+            }
+
+            Rect rect = new Rect();
+            input.getDrawingRect(rect);
+            editScroll.offsetDescendantRectToMyCoords(input, rect);
+
+            int target = Math.max(0, rect.top - dp(70));
+            editScroll.smoothScrollTo(0, target);
+        }, 280);
     }
 
     private boolean saveData() {
@@ -344,6 +379,7 @@ public class MainActivity extends Activity {
         if (name.isEmpty()) {
             nameInput.setError("Введите ФИО");
             nameInput.requestFocus();
+            scrollInputIntoView(nameInput);
             return false;
         }
 
