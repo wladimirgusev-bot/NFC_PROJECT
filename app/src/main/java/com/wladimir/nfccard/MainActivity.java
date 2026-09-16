@@ -1,6 +1,7 @@
 package com.wladimir.nfccard;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -31,6 +32,10 @@ import com.google.zxing.WriterException;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -43,6 +48,11 @@ public class MainActivity extends Activity {
     private static final String KEY_PHONE = "phone";
     private static final String KEY_EMAIL = "email";
     private static final String KEY_HAS_PROFILE = "has_profile";
+    private static final String KEY_EXTRA_FIELDS = "extra_fields";
+
+    private static final String TYPE_PHONE = "phone";
+    private static final String TYPE_EMAIL = "email";
+    private static final String TYPE_ORG = "org";
 
     private EditText nameInput;
     private EditText jobInput;
@@ -54,6 +64,20 @@ public class MainActivity extends Activity {
     private LinearLayout editBar;
     private ScrollView editScroll;
     private LinearLayout editPage;
+    private LinearLayout extraFieldsContainer;
+
+    private final ArrayList<ExtraField> extraFields = new ArrayList<>();
+
+    private static class ExtraField {
+        String type;
+        String value;
+        EditText input;
+
+        ExtraField(String type, String value) {
+            this.type = type;
+            this.value = value == null ? "" : value;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -134,6 +158,8 @@ public class MainActivity extends Activity {
         editBar.setVisibility(View.GONE);
         contentHost.removeAllViews();
 
+        loadExtraFields();
+
         editScroll = new ScrollView(this);
         editScroll.setFillViewport(true);
         editScroll.setVerticalScrollBarEnabled(true);
@@ -213,6 +239,26 @@ public class MainActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         );
 
+        extraFieldsContainer = new LinearLayout(this);
+        extraFieldsContainer.setOrientation(LinearLayout.VERTICAL);
+        form.addView(extraFieldsContainer, lp(-1, -2));
+        renderExtraFields();
+
+        Button addField = new Button(this);
+        addField.setText("+ ДОБАВИТЬ ПОЛЕ");
+        addField.setTextSize(14);
+        addField.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addField.setTextColor(Color.rgb(37, 99, 235));
+        GradientDrawable addBg = roundRect(Color.WHITE, 14);
+        addBg.setStroke(dp(1), Color.rgb(37, 99, 235));
+        addField.setBackground(addBg);
+
+        LinearLayout.LayoutParams addLp = lp(-1, dp(52));
+        addLp.setMargins(0, dp(16), 0, 0);
+        form.addView(addField, addLp);
+
+        addField.setOnClickListener(v -> showAddFieldDialog());
+
         Button save = new Button(this);
         save.setText("СОХРАНИТЬ");
         save.setTextSize(16);
@@ -224,9 +270,6 @@ public class MainActivity extends Activity {
         saveLp.setMargins(0, dp(18), 0, 0);
         editPage.addView(save, saveLp);
 
-        // Большой нижний запас нужен, чтобы даже на устройствах,
-        // которые не уменьшают окно под клавиатуру корректно,
-        // последние поля можно было физически поднять выше клавиатуры.
         View bottomSpacer = new View(this);
         editPage.addView(bottomSpacer, lp(-1, dp(320)));
 
@@ -249,6 +292,188 @@ public class MainActivity extends Activity {
         installKeyboardAwareScrolling();
     }
 
+    private void showAddFieldDialog() {
+        syncExtraValues();
+
+        String[] items = {"Телефон", "E-mail", "Организация"};
+
+        new AlertDialog.Builder(this)
+                .setTitle("Добавить поле")
+                .setItems(items, (dialog, which) -> {
+                    String type;
+                    if (which == 0) {
+                        type = TYPE_PHONE;
+                    } else if (which == 1) {
+                        type = TYPE_EMAIL;
+                    } else {
+                        type = TYPE_ORG;
+                    }
+
+                    extraFields.add(new ExtraField(type, ""));
+                    renderExtraFields();
+
+                    if (!extraFields.isEmpty()) {
+                        ExtraField added = extraFields.get(extraFields.size() - 1);
+                        if (added.input != null) {
+                            added.input.requestFocus();
+                            ensureFieldVisible(added.input);
+                            showKeyboard(added.input);
+                        }
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void renderExtraFields() {
+        if (extraFieldsContainer == null) {
+            return;
+        }
+
+        extraFieldsContainer.removeAllViews();
+
+        int phoneNo = 2;
+        int emailNo = 2;
+        int orgNo = 2;
+
+        for (int i = 0; i < extraFields.size(); i++) {
+            final int index = i;
+            ExtraField field = extraFields.get(i);
+
+            String label;
+            String hint;
+            int inputType;
+
+            if (TYPE_PHONE.equals(field.type)) {
+                label = "Телефон " + phoneNo++;
+                hint = "Введите номер телефона";
+                inputType = InputType.TYPE_CLASS_PHONE;
+            } else if (TYPE_EMAIL.equals(field.type)) {
+                label = "E-mail " + emailNo++;
+                hint = "Введите адрес электронной почты";
+                inputType = InputType.TYPE_CLASS_TEXT
+                        | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
+            } else {
+                label = "Организация " + orgNo++;
+                hint = "Введите название организации";
+                inputType = InputType.TYPE_CLASS_TEXT
+                        | InputType.TYPE_TEXT_FLAG_CAP_WORDS;
+            }
+
+            LinearLayout header = new LinearLayout(this);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView labelView = text(label, 14, Color.rgb(51, 65, 85));
+            labelView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+            LinearLayout.LayoutParams labelLp =
+                    new LinearLayout.LayoutParams(0, -2, 1f);
+            labelLp.setMargins(0, dp(10), 0, dp(6));
+            header.addView(labelView, labelLp);
+
+            TextView remove = text("✕", 20, Color.rgb(220, 38, 38));
+            remove.setGravity(Gravity.CENTER);
+            remove.setContentDescription("Удалить поле " + label);
+            remove.setClickable(true);
+            remove.setFocusable(true);
+
+            LinearLayout.LayoutParams removeLp =
+                    new LinearLayout.LayoutParams(dp(40), dp(40));
+            removeLp.setMargins(dp(8), dp(4), 0, 0);
+            header.addView(remove, removeLp);
+
+            extraFieldsContainer.addView(header, lp(-1, -2));
+
+            EditText input = new EditText(this);
+            input.setHint(hint);
+            input.setText(field.value);
+            input.setTextSize(16);
+            input.setTextColor(Color.rgb(15, 23, 42));
+            input.setHintTextColor(Color.rgb(148, 163, 184));
+            input.setSingleLine(true);
+            input.setInputType(inputType);
+            input.setPadding(dp(14), 0, dp(14), 0);
+
+            GradientDrawable bg =
+                    roundRect(Color.rgb(248, 250, 252), 12);
+            bg.setStroke(dp(1), Color.rgb(203, 213, 225));
+            input.setBackground(bg);
+
+            extraFieldsContainer.addView(input, lp(-1, dp(54)));
+            field.input = input;
+
+            input.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    ensureFieldVisible(input);
+                }
+            });
+
+            input.setOnClickListener(v -> ensureFieldVisible(input));
+
+            remove.setOnClickListener(v -> {
+                syncExtraValues();
+                if (index >= 0 && index < extraFields.size()) {
+                    extraFields.remove(index);
+                    renderExtraFields();
+                }
+            });
+        }
+    }
+
+    private void syncExtraValues() {
+        for (ExtraField field : extraFields) {
+            if (field.input != null) {
+                field.value = field.input.getText().toString().trim();
+            }
+        }
+    }
+
+    private void loadExtraFields() {
+        extraFields.clear();
+
+        String json = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(KEY_EXTRA_FIELDS, "[]");
+
+        try {
+            JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject obj = array.optJSONObject(i);
+                if (obj == null) {
+                    continue;
+                }
+
+                String type = obj.optString("type", "");
+                String value = obj.optString("value", "");
+
+                if (TYPE_PHONE.equals(type)
+                        || TYPE_EMAIL.equals(type)
+                        || TYPE_ORG.equals(type)) {
+                    extraFields.add(new ExtraField(type, value));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String extrasToJson() {
+        syncExtraValues();
+
+        JSONArray array = new JSONArray();
+
+        try {
+            for (ExtraField field : extraFields) {
+                JSONObject obj = new JSONObject();
+                obj.put("type", field.type);
+                obj.put("value", field.value);
+                array.put(obj);
+            }
+        } catch (Exception ignored) {
+        }
+
+        return array.toString();
+    }
+
     private void installKeyboardAwareScrolling() {
         if (editScroll == null) {
             return;
@@ -268,8 +493,6 @@ public class MainActivity extends Activity {
                         int screenHeight = editScroll.getRootView().getHeight();
                         int obscured = Math.max(0, screenHeight - visible.bottom);
 
-                        // Если закрыто больше примерно 15% экрана — считаем,
-                        // что открыта клавиатура.
                         boolean keyboardOpen = obscured > screenHeight * 0.15f;
 
                         int bottomPadding = keyboardOpen
@@ -299,8 +522,11 @@ public class MainActivity extends Activity {
     private void showCardScreen() {
         editScroll = null;
         editPage = null;
+        extraFieldsContainer = null;
         editBar.setVisibility(View.VISIBLE);
         contentHost.removeAllViews();
+
+        loadExtraFields();
 
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
 
@@ -396,6 +622,16 @@ public class MainActivity extends Activity {
             card.addView(companyView, companyLp);
         }
 
+        for (ExtraField field : extraFields) {
+            if (TYPE_ORG.equals(field.type) && !field.value.isEmpty()) {
+                TextView orgView = text(field.value, 16, Color.rgb(37, 99, 235));
+                orgView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                LinearLayout.LayoutParams orgLp = lp(-1, -2);
+                orgLp.setMargins(0, dp(6), 0, 0);
+                card.addView(orgView, orgLp);
+            }
+        }
+
         View divider = new View(this);
         divider.setBackgroundColor(Color.rgb(226, 232, 240));
         LinearLayout.LayoutParams divLp =
@@ -404,12 +640,20 @@ public class MainActivity extends Activity {
         card.addView(divider, divLp);
 
         if (!phone.isEmpty()) {
-            TextView phoneView = text(
-                    "☎  " + phone,
-                    16,
-                    Color.rgb(30, 41, 59)
+            card.addView(
+                    text("☎  " + phone, 16, Color.rgb(30, 41, 59)),
+                    lp(-1, -2)
             );
-            card.addView(phoneView, lp(-1, -2));
+        }
+
+        for (ExtraField field : extraFields) {
+            if (TYPE_PHONE.equals(field.type) && !field.value.isEmpty()) {
+                TextView phoneView =
+                        text("☎  " + field.value, 16, Color.rgb(30, 41, 59));
+                LinearLayout.LayoutParams p = lp(-1, -2);
+                p.setMargins(0, dp(10), 0, 0);
+                card.addView(phoneView, p);
+            }
         }
 
         if (!email.isEmpty()) {
@@ -421,6 +665,16 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams emailLp = lp(-1, -2);
             emailLp.setMargins(0, dp(10), 0, 0);
             card.addView(emailView, emailLp);
+        }
+
+        for (ExtraField field : extraFields) {
+            if (TYPE_EMAIL.equals(field.type) && !field.value.isEmpty()) {
+                TextView emailView =
+                        text("✉  " + field.value, 16, Color.rgb(37, 99, 235));
+                LinearLayout.LayoutParams p = lp(-1, -2);
+                p.setMargins(0, dp(10), 0, 0);
+                card.addView(emailView, p);
+            }
         }
 
         contentHost.addView(scroll);
@@ -477,8 +731,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Два прохода: первый сразу, второй после того, как клавиатура
-        // успеет изменить видимую область окна.
         editScroll.post(() -> scrollFieldNow(input));
         editScroll.postDelayed(() -> scrollFieldNow(input), 350);
     }
@@ -492,7 +744,6 @@ public class MainActivity extends Activity {
         input.getDrawingRect(rect);
         editScroll.offsetDescendantRectToMyCoords(input, rect);
 
-        // Поднимаем поле примерно в верхнюю треть видимой области.
         int target = Math.max(0, rect.top - dp(90));
         editScroll.smoothScrollTo(0, target);
     }
@@ -518,6 +769,7 @@ public class MainActivity extends Activity {
                 .putString(KEY_COMPANY, company)
                 .putString(KEY_PHONE, phone)
                 .putString(KEY_EMAIL, email)
+                .putString(KEY_EXTRA_FIELDS, extrasToJson())
                 .putBoolean(KEY_HAS_PROFILE, true)
                 .apply();
 
@@ -559,6 +811,14 @@ public class MainActivity extends Activity {
                     .append("\r\n");
         }
 
+        for (ExtraField field : extraFields) {
+            if (TYPE_ORG.equals(field.type) && !field.value.isEmpty()) {
+                vcard.append("ORG:")
+                        .append(vcardEscape(field.value))
+                        .append("\r\n");
+            }
+        }
+
         if (job != null && !job.trim().isEmpty()) {
             vcard.append("TITLE:")
                     .append(vcardEscape(job))
@@ -571,10 +831,26 @@ public class MainActivity extends Activity {
                     .append("\r\n");
         }
 
+        for (ExtraField field : extraFields) {
+            if (TYPE_PHONE.equals(field.type) && !field.value.isEmpty()) {
+                vcard.append("TEL;TYPE=CELL:")
+                        .append(vcardEscape(field.value))
+                        .append("\r\n");
+            }
+        }
+
         if (email != null && !email.trim().isEmpty()) {
             vcard.append("EMAIL;TYPE=INTERNET:")
                     .append(vcardEscape(email))
                     .append("\r\n");
+        }
+
+        for (ExtraField field : extraFields) {
+            if (TYPE_EMAIL.equals(field.type) && !field.value.isEmpty()) {
+                vcard.append("EMAIL;TYPE=INTERNET:")
+                        .append(vcardEscape(field.value))
+                        .append("\r\n");
+            }
         }
 
         vcard.append("END:VCARD\r\n");
@@ -685,6 +961,21 @@ public class MainActivity extends Activity {
         }
 
         focused.clearFocus();
+    }
+
+    private void showKeyboard(View view) {
+        if (view == null) {
+            return;
+        }
+
+        view.postDelayed(() -> {
+            InputMethodManager imm =
+                    (InputMethodManager)
+                            getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }, 150);
     }
 
     private String getInitials(String name) {
