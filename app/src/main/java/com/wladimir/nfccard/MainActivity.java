@@ -3,6 +3,7 @@ package com.wladimir.nfccard;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -10,16 +11,32 @@ import android.nfc.NfcAdapter;
 import android.nfc.cardemulation.CardEmulation;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
+
+    private static final String PREFS = "nfc_card";
+    private static final String KEY_NAME = "name";
+    private static final String KEY_JOB = "job";
+    private static final String KEY_PHONE = "phone";
+    private static final String KEY_EMAIL = "email";
+    private static final String KEY_ENABLED = "enabled";
+
+    private EditText nameInput;
+    private EditText jobInput;
+    private EditText phoneInput;
+    private EditText emailInput;
     private TextView status;
+
     private NfcAdapter nfcAdapter;
     private CardEmulation cardEmulation;
     private ComponentName hceService;
@@ -33,98 +50,82 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
-        hceService = new ComponentName(this, NdefHceService.class);
         if (nfcAdapter != null) {
-            try {
-                cardEmulation = CardEmulation.getInstance(nfcAdapter);
-            } catch (Exception ignored) {
-                cardEmulation = null;
-            }
+            cardEmulation = CardEmulation.getInstance(nfcAdapter);
+            hceService = new ComponentName(this, NdefHceService.class);
         }
+
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(24), dp(40), dp(24), dp(30));
+        root.setPadding(dp(22), dp(28), dp(22), dp(24));
         root.setBackgroundColor(Color.rgb(11, 16, 32));
 
-        TextView label = text("DIGITAL BUSINESS CARD", 13, Color.rgb(147, 163, 184));
-        label.setLetterSpacing(0.18f);
-        root.addView(label, lp(-1, -2, 0));
+        TextView title = text("NFC BUSINESS CARD", 22, Color.WHITE);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        root.addView(title, lp(-1, -2));
 
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(26), dp(30), dp(26), dp(28));
-        card.setBackground(roundRect(Color.WHITE, 26));
-        LinearLayout.LayoutParams cardLp = lp(-1, -2, 0);
-        cardLp.setMargins(0, dp(24), 0, 0);
-        root.addView(card, cardLp);
+        TextView subtitle = text("Введите данные, которые будут передаваться по NFC", 14, Color.rgb(148, 163, 184));
+        LinearLayout.LayoutParams subLp = lp(-1, -2);
+        subLp.setMargins(0, dp(6), 0, dp(20));
+        root.addView(subtitle, subLp);
 
-        TextView initials = text("WG", 22, Color.WHITE);
-        initials.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        initials.setGravity(Gravity.CENTER);
-        initials.setBackground(roundRect(Color.rgb(35, 99, 235), 50));
-        LinearLayout.LayoutParams initLp = new LinearLayout.LayoutParams(dp(66), dp(66));
-        card.addView(initials, initLp);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(20), dp(20), dp(20));
+        form.setBackground(roundRect(Color.WHITE, 22));
+        root.addView(form, lp(-1, -2));
 
-        TextView name = text("Wladimir Gusev", 30, Color.rgb(15, 23, 42));
-        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        LinearLayout.LayoutParams nameLp = lp(-1, -2, 0);
-        nameLp.setMargins(0, dp(22), 0, 0);
-        card.addView(name, nameLp);
+        nameInput = field(form, "ФИО", prefs.getString(KEY_NAME, "Wladimir Gusev"),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
 
-        TextView job = text("Lead Project Manager", 18, Color.rgb(51, 65, 85));
-        LinearLayout.LayoutParams jobLp = lp(-1, -2, 0);
-        jobLp.setMargins(0, dp(6), 0, 0);
-        card.addView(job, jobLp);
+        jobInput = field(form, "Должность", prefs.getString(KEY_JOB, "Lead Project Manager"),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
 
-        TextView company = text("ООО «АрПи Канон Медикал Системз»", 16, Color.rgb(71, 85, 105));
-        LinearLayout.LayoutParams companyLp = lp(-1, -2, 0);
-        companyLp.setMargins(0, dp(20), 0, 0);
-        card.addView(company, companyLp);
+        phoneInput = field(form, "Телефон", prefs.getString(KEY_PHONE, "+7 (926) 610-10-36"),
+                InputType.TYPE_CLASS_PHONE);
 
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.rgb(226, 232, 240));
-        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, dp(1));
-        divLp.setMargins(0, dp(22), 0, dp(18));
-        card.addView(divider, divLp);
+        emailInput = field(form, "E-mail", prefs.getString(KEY_EMAIL, "Vladimir.Gusev@rp.medical.canon"),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
 
-        TextView phone = text("Тел.: +7 (926) 610-10-36", 16, Color.rgb(30, 41, 59));
-        card.addView(phone, lp(-1, -2, 0));
+        Button save = new Button(this);
+        save.setText("СОХРАНИТЬ");
+        save.setTextSize(16);
+        save.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        save.setTextColor(Color.WHITE);
+        save.setBackground(roundRect(Color.rgb(71, 85, 105), 16));
+        LinearLayout.LayoutParams saveLp = lp(-1, dp(54));
+        saveLp.setMargins(0, dp(20), 0, 0);
+        root.addView(save, saveLp);
 
-        TextView email = text("Vladimir.Gusev@rp.medical.canon", 16, Color.rgb(35, 99, 235));
-        LinearLayout.LayoutParams emailLp = lp(-1, -2, 0);
-        emailLp.setMargins(0, dp(10), 0, 0);
-        card.addView(email, emailLp);
+        Button share = new Button(this);
+        share.setText("ПЕРЕДАВАТЬ ПО NFC");
+        share.setTextSize(16);
+        share.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        share.setTextColor(Color.WHITE);
+        share.setBackground(roundRect(Color.rgb(37, 99, 235), 16));
+        LinearLayout.LayoutParams shareLp = lp(-1, dp(58));
+        shareLp.setMargins(0, dp(12), 0, 0);
+        root.addView(share, shareLp);
 
-        LinearLayout nfc = new LinearLayout(this);
-        nfc.setOrientation(LinearLayout.VERTICAL);
-        nfc.setGravity(Gravity.CENTER);
-        nfc.setPadding(dp(20), dp(20), dp(20), dp(20));
-        nfc.setBackground(roundRect(Color.rgb(37, 99, 235), 22));
-        LinearLayout.LayoutParams nfcLp = lp(-1, -2, 0);
-        nfcLp.setMargins(0, dp(24), 0, 0);
-        root.addView(nfc, nfcLp);
-
-        TextView nfcTitle = text("NFC  •  ПЕРЕДАТЬ КОНТАКТ", 17, Color.WHITE);
-        nfcTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        nfcTitle.setGravity(Gravity.CENTER);
-        nfc.addView(nfcTitle, lp(-1, -2, 0));
-
-        status = text("Нажмите сюда и приложите другой телефон", 14, Color.rgb(219, 234, 254));
+        status = text("NFC-визитка не активирована", 13, Color.rgb(148, 163, 184));
         status.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams statusLp = lp(-1, -2, 0);
-        statusLp.setMargins(0, dp(7), 0, 0);
-        nfc.addView(status, statusLp);
+        LinearLayout.LayoutParams statusLp = lp(-1, -2);
+        statusLp.setMargins(0, dp(14), 0, 0);
+        root.addView(status, statusLp);
 
-        nfc.setOnClickListener(v -> enableShare());
-        card.setOnClickListener(v -> enableShare());
+        save.setOnClickListener(v -> {
+            if (saveData()) {
+                Toast.makeText(this, "Данные сохранены", Toast.LENGTH_SHORT).show();
+            }
+        });
 
-        TextView note = text("Передаётся стандартная vCard. При открытой визитке NFC Business Card выбирается приоритетным сервисом автоматически.", 12, Color.rgb(148, 163, 184));
-        note.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams noteLp = lp(-1, -2, 1);
-        noteLp.setMargins(dp(8), dp(18), dp(8), 0);
-        root.addView(note, noteLp);
+        share.setOnClickListener(v -> {
+            if (saveData()) {
+                enableShare();
+            }
+        });
 
         setContentView(root);
     }
@@ -132,17 +133,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (nfcAdapter != null && nfcAdapter.isEnabled()
-                && getSharedPreferences("nfc_card", MODE_PRIVATE).getBoolean("enabled", false)) {
-            preferThisService();
-            if (status != null) {
-                status.setText("Готово к передаче • приложите другой телефон");
-            }
-        }
+        setPreferredHceService();
     }
 
     @Override
     protected void onPause() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, false).apply();
         if (cardEmulation != null) {
             try {
                 cardEmulation.unsetPreferredService(this);
@@ -152,13 +148,58 @@ public class MainActivity extends Activity {
         super.onPause();
     }
 
+    private EditText field(LinearLayout parent, String hint, String value, int inputType) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setText(value);
+        input.setTextSize(16);
+        input.setTextColor(Color.rgb(15, 23, 42));
+        input.setHintTextColor(Color.rgb(148, 163, 184));
+        input.setSingleLine(true);
+        input.setInputType(inputType);
+        input.setPadding(dp(14), dp(4), dp(14), dp(4));
+
+        GradientDrawable bg = roundRect(Color.rgb(248, 250, 252), 12);
+        bg.setStroke(dp(1), Color.rgb(203, 213, 225));
+        input.setBackground(bg);
+
+        LinearLayout.LayoutParams p = lp(-1, dp(58));
+        p.setMargins(0, dp(8), 0, dp(4));
+        parent.addView(input, p);
+        return input;
+    }
+
+    private boolean saveData() {
+        String name = nameInput.getText().toString().trim();
+        String job = jobInput.getText().toString().trim();
+        String phone = phoneInput.getText().toString().trim();
+        String email = emailInput.getText().toString().trim();
+
+        if (name.isEmpty()) {
+            nameInput.setError("Введите ФИО");
+            nameInput.requestFocus();
+            return false;
+        }
+
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_NAME, name)
+                .putString(KEY_JOB, job)
+                .putString(KEY_PHONE, phone)
+                .putString(KEY_EMAIL, email)
+                .apply();
+
+        return true;
+    }
+
     private void enableShare() {
         if (nfcAdapter == null) {
             Toast.makeText(this, "На этом телефоне NFC не поддерживается", Toast.LENGTH_LONG).show();
             return;
         }
+
         if (!nfcAdapter.isEnabled()) {
-            status.setText("Включите NFC в открывшихся настройках");
+            status.setText("Включите NFC в системных настройках");
             try {
                 startActivity(new Intent(Settings.ACTION_NFC_SETTINGS));
             } catch (Exception e) {
@@ -166,18 +207,26 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        getSharedPreferences("nfc_card", MODE_PRIVATE).edit().putBoolean("enabled", true).apply();
-        preferThisService();
-        status.setText("Готово к передаче • приложите другой телефон");
-        Toast.makeText(this, "NFC Business Card выбрана автоматически", Toast.LENGTH_SHORT).show();
+
+        setPreferredHceService();
+
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_ENABLED, true)
+                .apply();
+
+        status.setText("Готово • приложите другой телефон");
+        Toast.makeText(this, "NFC-визитка активна", Toast.LENGTH_SHORT).show();
     }
 
-    private void preferThisService() {
-        if (cardEmulation != null && hceService != null) {
-            try {
-                cardEmulation.setPreferredService(this, hceService);
-            } catch (Exception ignored) {
-            }
+    private void setPreferredHceService() {
+        if (nfcAdapter == null || !nfcAdapter.isEnabled() || cardEmulation == null || hceService == null) {
+            return;
+        }
+
+        try {
+            cardEmulation.setPreferredService(this, hceService);
+        } catch (Exception ignored) {
         }
     }
 
@@ -186,7 +235,6 @@ public class MainActivity extends Activity {
         t.setText(value);
         t.setTextSize(sp);
         t.setTextColor(color);
-        t.setLineSpacing(0, 1.08f);
         return t;
     }
 
@@ -197,8 +245,8 @@ public class MainActivity extends Activity {
         return g;
     }
 
-    private LinearLayout.LayoutParams lp(int w, int h, float weight) {
-        return new LinearLayout.LayoutParams(w, h, weight);
+    private LinearLayout.LayoutParams lp(int w, int h) {
+        return new LinearLayout.LayoutParams(w, h);
     }
 
     private int dp(int value) {
