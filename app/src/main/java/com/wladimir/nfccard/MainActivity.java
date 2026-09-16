@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
@@ -38,18 +39,21 @@ public class MainActivity extends Activity {
     private static final String PREFS = "nfc_card";
     private static final String KEY_NAME = "name";
     private static final String KEY_JOB = "job";
+    private static final String KEY_COMPANY = "company";
     private static final String KEY_PHONE = "phone";
     private static final String KEY_EMAIL = "email";
     private static final String KEY_HAS_PROFILE = "has_profile";
 
     private EditText nameInput;
     private EditText jobInput;
+    private EditText companyInput;
     private EditText phoneInput;
     private EditText emailInput;
 
     private FrameLayout contentHost;
     private LinearLayout editBar;
     private ScrollView editScroll;
+    private LinearLayout editPage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,7 +62,10 @@ public class MainActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setStatusBarColor(Color.rgb(11, 16, 32));
         getWindow().setNavigationBarColor(Color.rgb(11, 16, 32));
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        getWindow().setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                        | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+        );
 
         buildShell();
 
@@ -82,8 +89,11 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title, lp(-1, -2));
 
-        TextView subtitle = text("Цифровая визитка по QR-коду", 13,
-                Color.rgb(148, 163, 184));
+        TextView subtitle = text(
+                "Цифровая визитка по QR-коду",
+                13,
+                Color.rgb(148, 163, 184)
+        );
         LinearLayout.LayoutParams subtitleLp = lp(-1, -2);
         subtitleLp.setMargins(0, dp(5), 0, dp(14));
         root.addView(subtitle, subtitleLp);
@@ -125,19 +135,26 @@ public class MainActivity extends Activity {
         contentHost.removeAllViews();
 
         editScroll = new ScrollView(this);
-        editScroll.setFillViewport(false);
+        editScroll.setFillViewport(true);
         editScroll.setVerticalScrollBarEnabled(true);
+        editScroll.setSmoothScrollingEnabled(true);
         editScroll.setClipToPadding(false);
-        editScroll.setPadding(0, 0, 0, dp(180));
+        editScroll.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
 
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(0, dp(4), 0, dp(24));
-        editScroll.addView(page);
+        editPage = new LinearLayout(this);
+        editPage.setOrientation(LinearLayout.VERTICAL);
+        editPage.setPadding(0, dp(4), 0, dp(24));
+        editScroll.addView(
+                editPage,
+                new ScrollView.LayoutParams(
+                        ScrollView.LayoutParams.MATCH_PARENT,
+                        ScrollView.LayoutParams.WRAP_CONTENT
+                )
+        );
 
         TextView heading = text("Данные визитки", 24, Color.WHITE);
         heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        page.addView(heading, lp(-1, -2));
+        editPage.addView(heading, lp(-1, -2));
 
         TextView hint = text(
                 "Заполните поля и нажмите «Сохранить».",
@@ -146,13 +163,13 @@ public class MainActivity extends Activity {
         );
         LinearLayout.LayoutParams hintLp = lp(-1, -2);
         hintLp.setMargins(0, dp(5), 0, dp(16));
-        page.addView(hint, hintLp);
+        editPage.addView(hint, hintLp);
 
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(20), dp(18), dp(20), dp(20));
         form.setBackground(roundRect(Color.WHITE, 22));
-        page.addView(form, lp(-1, -2));
+        editPage.addView(form, lp(-1, -2));
 
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
 
@@ -170,6 +187,14 @@ public class MainActivity extends Activity {
                 "Введите должность",
                 prefs.getString(KEY_JOB, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        );
+
+        companyInput = labeledField(
+                form,
+                "Компания",
+                "Введите название компании",
+                prefs.getString(KEY_COMPANY, ""),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS
         );
 
         phoneInput = labeledField(
@@ -197,7 +222,13 @@ public class MainActivity extends Activity {
 
         LinearLayout.LayoutParams saveLp = lp(-1, dp(56));
         saveLp.setMargins(0, dp(18), 0, 0);
-        page.addView(save, saveLp);
+        editPage.addView(save, saveLp);
+
+        // Большой нижний запас нужен, чтобы даже на устройствах,
+        // которые не уменьшают окно под клавиатуру корректно,
+        // последние поля можно было физически поднять выше клавиатуры.
+        View bottomSpacer = new View(this);
+        editPage.addView(bottomSpacer, lp(-1, dp(320)));
 
         save.setOnClickListener(v -> {
             if (saveData()) {
@@ -207,11 +238,67 @@ public class MainActivity extends Activity {
             }
         });
 
-        contentHost.addView(editScroll);
+        contentHost.addView(
+                editScroll,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                )
+        );
+
+        installKeyboardAwareScrolling();
+    }
+
+    private void installKeyboardAwareScrolling() {
+        if (editScroll == null) {
+            return;
+        }
+
+        editScroll.getViewTreeObserver().addOnGlobalLayoutListener(
+                new ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        if (editScroll == null) {
+                            return;
+                        }
+
+                        Rect visible = new Rect();
+                        editScroll.getWindowVisibleDisplayFrame(visible);
+
+                        int screenHeight = editScroll.getRootView().getHeight();
+                        int obscured = Math.max(0, screenHeight - visible.bottom);
+
+                        // Если закрыто больше примерно 15% экрана — считаем,
+                        // что открыта клавиатура.
+                        boolean keyboardOpen = obscured > screenHeight * 0.15f;
+
+                        int bottomPadding = keyboardOpen
+                                ? Math.max(dp(24), obscured + dp(24))
+                                : dp(24);
+
+                        if (editScroll.getPaddingBottom() != bottomPadding) {
+                            editScroll.setPadding(
+                                    editScroll.getPaddingLeft(),
+                                    editScroll.getPaddingTop(),
+                                    editScroll.getPaddingRight(),
+                                    bottomPadding
+                            );
+                        }
+
+                        if (keyboardOpen) {
+                            View focused = getCurrentFocus();
+                            if (focused instanceof EditText) {
+                                ensureFieldVisible(focused);
+                            }
+                        }
+                    }
+                }
+        );
     }
 
     private void showCardScreen() {
         editScroll = null;
+        editPage = null;
         editBar.setVisibility(View.VISIBLE);
         contentHost.removeAllViews();
 
@@ -219,6 +306,7 @@ public class MainActivity extends Activity {
 
         String name = prefs.getString(KEY_NAME, "");
         String job = prefs.getString(KEY_JOB, "");
+        String company = prefs.getString(KEY_COMPANY, "");
         String phone = prefs.getString(KEY_PHONE, "");
         String email = prefs.getString(KEY_EMAIL, "");
 
@@ -255,7 +343,7 @@ public class MainActivity extends Activity {
 
         ImageView qrView = new ImageView(this);
         Bitmap qrBitmap = buildQrBitmap(
-                buildVCard(name, job, phone, email),
+                buildVCard(name, job, company, phone, email),
                 dp(260)
         );
 
@@ -298,6 +386,14 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams jobLp = lp(-1, -2);
             jobLp.setMargins(0, dp(6), 0, 0);
             card.addView(jobView, jobLp);
+        }
+
+        if (!company.isEmpty()) {
+            TextView companyView = text(company, 16, Color.rgb(37, 99, 235));
+            companyView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            LinearLayout.LayoutParams companyLp = lp(-1, -2);
+            companyLp.setMargins(0, dp(6), 0, 0);
+            card.addView(companyView, companyLp);
         }
 
         View divider = new View(this);
@@ -367,44 +463,51 @@ public class MainActivity extends Activity {
 
         input.setOnFocusChangeListener((v, hasFocus) -> {
             if (hasFocus) {
-                scrollInputIntoView(input);
+                ensureFieldVisible(input);
             }
         });
 
-        input.setOnClickListener(v -> scrollInputIntoView(input));
+        input.setOnClickListener(v -> ensureFieldVisible(input));
 
         return input;
     }
 
-    private void scrollInputIntoView(View input) {
-        if (editScroll == null) {
+    private void ensureFieldVisible(View input) {
+        if (editScroll == null || input == null) {
             return;
         }
 
-        editScroll.postDelayed(() -> {
-            if (editScroll == null) {
-                return;
-            }
+        // Два прохода: первый сразу, второй после того, как клавиатура
+        // успеет изменить видимую область окна.
+        editScroll.post(() -> scrollFieldNow(input));
+        editScroll.postDelayed(() -> scrollFieldNow(input), 350);
+    }
 
-            Rect rect = new Rect();
-            input.getDrawingRect(rect);
-            editScroll.offsetDescendantRectToMyCoords(input, rect);
+    private void scrollFieldNow(View input) {
+        if (editScroll == null || input == null) {
+            return;
+        }
 
-            int target = Math.max(0, rect.top - dp(70));
-            editScroll.smoothScrollTo(0, target);
-        }, 280);
+        Rect rect = new Rect();
+        input.getDrawingRect(rect);
+        editScroll.offsetDescendantRectToMyCoords(input, rect);
+
+        // Поднимаем поле примерно в верхнюю треть видимой области.
+        int target = Math.max(0, rect.top - dp(90));
+        editScroll.smoothScrollTo(0, target);
     }
 
     private boolean saveData() {
         String name = nameInput.getText().toString().trim();
         String job = jobInput.getText().toString().trim();
+        String company = companyInput.getText().toString().trim();
         String phone = phoneInput.getText().toString().trim();
         String email = emailInput.getText().toString().trim();
 
         if (name.isEmpty()) {
             nameInput.setError("Введите ФИО");
             nameInput.requestFocus();
-            scrollInputIntoView(nameInput);
+            ensureFieldVisible(nameInput);
             return false;
         }
 
@@ -412,6 +515,7 @@ public class MainActivity extends Activity {
                 .edit()
                 .putString(KEY_NAME, name)
                 .putString(KEY_JOB, job)
+                .putString(KEY_COMPANY, company)
                 .putString(KEY_PHONE, phone)
                 .putString(KEY_EMAIL, email)
                 .putBoolean(KEY_HAS_PROFILE, true)
@@ -423,6 +527,7 @@ public class MainActivity extends Activity {
     private String buildVCard(
             String name,
             String job,
+            String company,
             String phone,
             String email
     ) {
@@ -436,13 +541,10 @@ public class MainActivity extends Activity {
         vcard.append("BEGIN:VCARD\r\n");
         vcard.append("VERSION:3.0\r\n");
 
-        // FN — отображаемое полное имя.
         vcard.append("FN:")
                 .append(vcardEscape(name))
                 .append("\r\n");
 
-        // N — структурированное имя:
-        // N:Фамилия;Имя;Отчество;Префикс;Суффикс
         vcard.append("N:")
                 .append(vcardEscape(familyName))
                 .append(";")
@@ -450,6 +552,12 @@ public class MainActivity extends Activity {
                 .append(";")
                 .append(vcardEscape(additionalName))
                 .append(";;\r\n");
+
+        if (company != null && !company.trim().isEmpty()) {
+            vcard.append("ORG:")
+                    .append(vcardEscape(company))
+                    .append("\r\n");
+        }
 
         if (job != null && !job.trim().isEmpty()) {
             vcard.append("TITLE:")
@@ -474,12 +582,6 @@ public class MainActivity extends Activity {
         return vcard.toString();
     }
 
-    /**
-     * Ожидаемый ввод: Фамилия Имя Отчество.
-     * 1 слово  -> фамилия
-     * 2 слова -> фамилия, имя
-     * 3+      -> фамилия, имя, оставшаяся часть как отчество/доп. имя
-     */
     private String[] splitRussianFullName(String fullName) {
         String normalized = fullName == null
                 ? ""
