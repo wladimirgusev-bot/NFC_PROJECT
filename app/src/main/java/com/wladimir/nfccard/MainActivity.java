@@ -1,11 +1,13 @@
 package com.wladimir.nfccard;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.nfc.NfcAdapter;
+import android.nfc.cardemulation.CardEmulation;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
@@ -18,6 +20,9 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity {
     private TextView status;
+    private NfcAdapter nfcAdapter;
+    private CardEmulation cardEmulation;
+    private ComponentName hceService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,6 +31,16 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(Color.rgb(11, 16, 32));
         getWindow().setNavigationBarColor(Color.rgb(11, 16, 32));
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+        hceService = new ComponentName(this, NdefHceService.class);
+        if (nfcAdapter != null) {
+            try {
+                cardEmulation = CardEmulation.getInstance(nfcAdapter);
+            } catch (Exception ignored) {
+                cardEmulation = null;
+            }
+        }
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -74,10 +89,10 @@ public class MainActivity extends Activity {
         divLp.setMargins(0, dp(22), 0, dp(18));
         card.addView(divider, divLp);
 
-        TextView phone = text("Тел.: —", 16, Color.rgb(30, 41, 59));
+        TextView phone = text("Тел.: +7 (926) 610-10-36", 16, Color.rgb(30, 41, 59));
         card.addView(phone, lp(-1, -2, 0));
 
-        TextView email = text("tj57@yandedx.ru", 16, Color.rgb(35, 99, 235));
+        TextView email = text("Vladimir.Gusev@rp.medical.canon", 16, Color.rgb(35, 99, 235));
         LinearLayout.LayoutParams emailLp = lp(-1, -2, 0);
         emailLp.setMargins(0, dp(10), 0, 0);
         card.addView(email, emailLp);
@@ -105,7 +120,7 @@ public class MainActivity extends Activity {
         nfc.setOnClickListener(v -> enableShare());
         card.setOnClickListener(v -> enableShare());
 
-        TextView note = text("Передаётся стандартная vCard. Если NFC выключен, приложение откроет системные настройки NFC.", 12, Color.rgb(148, 163, 184));
+        TextView note = text("Передаётся стандартная vCard. При открытой визитке NFC Business Card выбирается приоритетным сервисом автоматически.", 12, Color.rgb(148, 163, 184));
         note.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams noteLp = lp(-1, -2, 1);
         noteLp.setMargins(dp(8), dp(18), dp(8), 0);
@@ -114,13 +129,35 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (nfcAdapter != null && nfcAdapter.isEnabled()
+                && getSharedPreferences("nfc_card", MODE_PRIVATE).getBoolean("enabled", false)) {
+            preferThisService();
+            if (status != null) {
+                status.setText("Готово к передаче • приложите другой телефон");
+            }
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (cardEmulation != null) {
+            try {
+                cardEmulation.unsetPreferredService(this);
+            } catch (Exception ignored) {
+            }
+        }
+        super.onPause();
+    }
+
     private void enableShare() {
-        NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
-        if (adapter == null) {
+        if (nfcAdapter == null) {
             Toast.makeText(this, "На этом телефоне NFC не поддерживается", Toast.LENGTH_LONG).show();
             return;
         }
-        if (!adapter.isEnabled()) {
+        if (!nfcAdapter.isEnabled()) {
             status.setText("Включите NFC в открывшихся настройках");
             try {
                 startActivity(new Intent(Settings.ACTION_NFC_SETTINGS));
@@ -130,8 +167,18 @@ public class MainActivity extends Activity {
             return;
         }
         getSharedPreferences("nfc_card", MODE_PRIVATE).edit().putBoolean("enabled", true).apply();
+        preferThisService();
         status.setText("Готово к передаче • приложите другой телефон");
-        Toast.makeText(this, "NFC-визитка активна", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "NFC Business Card выбрана автоматически", Toast.LENGTH_SHORT).show();
+    }
+
+    private void preferThisService() {
+        if (cardEmulation != null && hceService != null) {
+            try {
+                cardEmulation.setPreferredService(this, hceService);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private TextView text(String value, float sp, int color) {

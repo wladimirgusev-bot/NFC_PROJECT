@@ -69,7 +69,8 @@ public class NdefHceService extends HostApduService {
                 "FN:Wladimir Gusev\r\n" +
                 "TITLE:Lead Project Manager\r\n" +
                 "ORG:ООО «АрПи Канон Медикал Системз»\r\n" +
-                "EMAIL;TYPE=INTERNET:tj57@yandedx.ru\r\n" +
+                "TEL;TYPE=CELL:+79266101036\r\n" +
+                "EMAIL;TYPE=INTERNET:Vladimir.Gusev@rp.medical.canon\r\n" +
                 "END:VCARD\r\n";
         byte[] type = "text/vcard".getBytes(StandardCharsets.US_ASCII);
         byte[] payload = vcard.getBytes(StandardCharsets.UTF_8);
