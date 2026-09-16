@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -22,10 +23,21 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
@@ -36,6 +48,8 @@ public class MainActivity extends Activity {
     private static final String KEY_EMAIL = "email";
     private static final String KEY_ENABLED = "enabled";
     private static final String KEY_HAS_PROFILE = "has_profile";
+
+    private static final String NFC_FORUM_NDEF_AID = "D2760000850101";
 
     private EditText nameInput;
     private EditText jobInput;
@@ -48,6 +62,7 @@ public class MainActivity extends Activity {
     private ScrollView editScroll;
 
     private boolean cardMode = false;
+    private boolean dynamicAidRegistered = false;
 
     private NfcAdapter nfcAdapter;
     private CardEmulation cardEmulation;
@@ -94,7 +109,7 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title, lp(-1, -2));
 
-        TextView subtitle = text("Цифровая визитка для передачи контакта по NFC", 13,
+        TextView subtitle = text("Цифровая визитка: NFC + QR", 13,
                 Color.rgb(148, 163, 184));
         LinearLayout.LayoutParams subtitleLp = lp(-1, -2);
         subtitleLp.setMargins(0, dp(5), 0, dp(14));
@@ -165,33 +180,25 @@ public class MainActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
 
         nameInput = labeledField(
-                form,
-                "ФИО",
-                "Введите ФИО",
+                form, "ФИО", "Введите ФИО",
                 prefs.getString(KEY_NAME, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS
         );
 
         jobInput = labeledField(
-                form,
-                "Должность",
-                "Введите должность",
+                form, "Должность", "Введите должность",
                 prefs.getString(KEY_JOB, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
 
         phoneInput = labeledField(
-                form,
-                "Телефон",
-                "Введите номер телефона",
+                form, "Телефон", "Введите номер телефона",
                 prefs.getString(KEY_PHONE, ""),
                 InputType.TYPE_CLASS_PHONE
         );
 
         emailInput = labeledField(
-                form,
-                "E-mail",
-                "Введите адрес электронной почты",
+                form, "E-mail", "Введите адрес электронной почты",
                 prefs.getString(KEY_EMAIL, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         );
@@ -232,12 +239,12 @@ public class MainActivity extends Activity {
         String email = prefs.getString(KEY_EMAIL, "");
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
+        scroll.setFillViewport(false);
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(0, dp(10), 0, dp(18));
+        page.setPadding(0, dp(10), 0, dp(24));
         scroll.addView(page);
 
         LinearLayout card = new LinearLayout(this);
@@ -297,17 +304,45 @@ public class MainActivity extends Activity {
         shareLp.setMargins(0, dp(18), 0, 0);
         page.addView(share, shareLp);
 
-        status = text("Нажмите кнопку и приложите другой телефон", 13,
+        status = text("NFC включается только после нажатия кнопки", 13,
                 Color.rgb(148, 163, 184));
         status.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams statusLp = lp(-1, -2);
-        statusLp.setMargins(dp(8), dp(12), dp(8), 0);
+        statusLp.setMargins(dp(8), dp(10), dp(8), 0);
         page.addView(status, statusLp);
+
+        TextView qrTitle = text("Или отсканируйте QR-код", 17, Color.WHITE);
+        qrTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        qrTitle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams qrTitleLp = lp(-1, -2);
+        qrTitleLp.setMargins(0, dp(22), 0, dp(10));
+        page.addView(qrTitle, qrTitleLp);
+
+        LinearLayout qrBox = new LinearLayout(this);
+        qrBox.setOrientation(LinearLayout.VERTICAL);
+        qrBox.setGravity(Gravity.CENTER);
+        qrBox.setPadding(dp(14), dp(14), dp(14), dp(14));
+        qrBox.setBackground(roundRect(Color.WHITE, 22));
+
+        ImageView qrView = new ImageView(this);
+        Bitmap qrBitmap = buildQrBitmap(buildVCard(name, job, phone, email), dp(240));
+        if (qrBitmap != null) {
+            qrView.setImageBitmap(qrBitmap);
+        }
+        qrBox.addView(qrView, new LinearLayout.LayoutParams(dp(240), dp(240)));
+
+        TextView qrHint = text("Камера откроет карточку контакта", 13,
+                Color.rgb(71, 85, 105));
+        qrHint.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams qrHintLp = lp(-1, -2);
+        qrHintLp.setMargins(0, dp(8), 0, 0);
+        qrBox.addView(qrHint, qrHintLp);
+
+        page.addView(qrBox, lp(-1, -2));
 
         share.setOnClickListener(v -> enableShare());
 
         contentHost.addView(scroll);
-        setPreferredHceService();
     }
 
     private EditText labeledField(
@@ -414,18 +449,47 @@ public class MainActivity extends Activity {
             return;
         }
 
-        setPreferredHceService();
+        boolean aidOk = activateNdefAid();
 
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
-                .putBoolean(KEY_ENABLED, true)
+                .putBoolean(KEY_ENABLED, aidOk)
                 .apply();
 
-        if (status != null) {
-            status.setText("Готово • приложите другой телефон");
+        if (aidOk) {
+            if (status != null) {
+                status.setText("Готово • приложите другой телефон");
+            }
+            Toast.makeText(this, "NFC-визитка активна", Toast.LENGTH_SHORT).show();
+        } else {
+            if (status != null) {
+                status.setText("Не удалось активировать NFC-визитку");
+            }
+            Toast.makeText(this, "Не удалось активировать NFC-сервис", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean activateNdefAid() {
+        if (cardEmulation == null || hceService == null) {
+            return false;
         }
 
-        Toast.makeText(this, "NFC-визитка активна", Toast.LENGTH_SHORT).show();
+        try {
+            dynamicAidRegistered = cardEmulation.registerAidsForService(
+                    hceService,
+                    CardEmulation.CATEGORY_OTHER,
+                    Collections.singletonList(NFC_FORUM_NDEF_AID)
+            );
+
+            if (!dynamicAidRegistered) {
+                return false;
+            }
+
+            return cardEmulation.setPreferredService(this, hceService);
+        } catch (Exception ignored) {
+            dynamicAidRegistered = false;
+            return false;
+        }
     }
 
     private void disableShareSession() {
@@ -434,41 +498,89 @@ public class MainActivity extends Activity {
                 .putBoolean(KEY_ENABLED, false)
                 .apply();
 
-        if (cardEmulation != null) {
+        if (cardEmulation != null && hceService != null) {
             try {
                 cardEmulation.unsetPreferredService(this);
             } catch (Exception ignored) {
             }
-        }
-    }
 
-    private void setPreferredHceService() {
-        if (!cardMode
-                || nfcAdapter == null
-                || !nfcAdapter.isEnabled()
-                || cardEmulation == null
-                || hceService == null) {
-            return;
+            if (dynamicAidRegistered) {
+                try {
+                    cardEmulation.removeAidsForService(
+                            hceService,
+                            CardEmulation.CATEGORY_OTHER
+                    );
+                } catch (Exception ignored) {
+                }
+            }
         }
 
-        try {
-            cardEmulation.setPreferredService(this, hceService);
-        } catch (Exception ignored) {
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (cardMode) {
-            setPreferredHceService();
-        }
+        dynamicAidRegistered = false;
     }
 
     @Override
     protected void onPause() {
         disableShareSession();
         super.onPause();
+    }
+
+    private String buildVCard(String name, String job, String phone, String email) {
+        StringBuilder vcard = new StringBuilder();
+        vcard.append("BEGIN:VCARD\r\n");
+        vcard.append("VERSION:3.0\r\n");
+        vcard.append("FN:").append(vcardEscape(name)).append("\r\n");
+        vcard.append("N:").append(vcardEscape(name)).append(";;;;\r\n");
+
+        if (job != null && !job.trim().isEmpty()) {
+            vcard.append("TITLE:").append(vcardEscape(job)).append("\r\n");
+        }
+
+        if (phone != null && !phone.trim().isEmpty()) {
+            vcard.append("TEL;TYPE=CELL:").append(vcardEscape(phone)).append("\r\n");
+        }
+
+        if (email != null && !email.trim().isEmpty()) {
+            vcard.append("EMAIL;TYPE=INTERNET:").append(vcardEscape(email)).append("\r\n");
+        }
+
+        vcard.append("END:VCARD\r\n");
+        return vcard.toString();
+    }
+
+    private String vcardEscape(String value) {
+        if (value == null) return "";
+        return value
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "")
+                .replace(";", "\\;")
+                .replace(",", "\\,");
+    }
+
+    private Bitmap buildQrBitmap(String value, int sizePx) {
+        try {
+            Map<EncodeHintType, Object> hints = new HashMap<>();
+            hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+            hints.put(EncodeHintType.MARGIN, 1);
+
+            BitMatrix matrix = new QRCodeWriter().encode(
+                    value,
+                    BarcodeFormat.QR_CODE,
+                    sizePx,
+                    sizePx,
+                    hints
+            );
+
+            Bitmap bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
+            for (int y = 0; y < sizePx; y++) {
+                for (int x = 0; x < sizePx; x++) {
+                    bitmap.setPixel(x, y, matrix.get(x, y) ? Color.BLACK : Color.WHITE);
+                }
+            }
+            return bitmap;
+        } catch (WriterException e) {
+            return null;
+        }
     }
 
     private void hideKeyboard() {

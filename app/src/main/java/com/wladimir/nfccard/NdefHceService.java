@@ -85,19 +85,19 @@ public class NdefHceService extends HostApduService {
 
     private byte[] buildNdefFile() {
         String name = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("name", "Wladimir Gusev");
+                .getString("name", "");
         String job = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("job", "Lead Project Manager");
+                .getString("job", "");
         String phone = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("phone", "+7 (926) 610-10-36");
+                .getString("phone", "");
         String email = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("email", "Vladimir.Gusev@rp.medical.canon");
+                .getString("email", "");
 
         StringBuilder vcard = new StringBuilder();
         vcard.append("BEGIN:VCARD\r\n");
         vcard.append("VERSION:3.0\r\n");
-        vcard.append("N:").append(escape(name)).append(";;;;\r\n");
         vcard.append("FN:").append(escape(name)).append("\r\n");
+        vcard.append("N:").append(escape(name)).append(";;;;\r\n");
 
         if (!job.trim().isEmpty()) {
             vcard.append("TITLE:").append(escape(job)).append("\r\n");
@@ -111,7 +111,9 @@ public class NdefHceService extends HostApduService {
 
         vcard.append("END:VCARD\r\n");
 
-        byte[] type = "text/vcard".getBytes(StandardCharsets.US_ASCII);
+        // text/x-vcard чаще ассоциируется Android с импортом контактов,
+        // чем text/vcard.
+        byte[] type = "text/x-vcard".getBytes(StandardCharsets.US_ASCII);
         byte[] payload = vcard.toString().getBytes(StandardCharsets.UTF_8);
 
         ByteArrayOutputStream msg = new ByteArrayOutputStream();
