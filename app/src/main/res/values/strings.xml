@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">NFC Business Card</string>
-    <string name="service_desc">NFC Business Card</string>
+    <string name="app_name">QR Business Card</string>
+    <string name="service_desc">QR Business Card</string>
 </resources>
